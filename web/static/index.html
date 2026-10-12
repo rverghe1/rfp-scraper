@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RFP Scraper Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>RFP Scraper Dashboard</h1>
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="results">Open RFPs</button>
+    <button class="tab-btn" data-tab="tracker">Awarded / Historical</button>
+  </div>
+  <div class="topbar-right">
+    <span id="rowCount" class="row-count"></span>
+    <button id="refreshBtn" class="refresh-btn" title="Refresh">&#8635;</button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <input id="searchBox" type="search" placeholder="Search all columns&hellip;" autocomplete="off">
+  <div id="filterBar" class="filter-bar"></div>
+</div>
+
+<div id="statusBanner" class="status-banner" hidden></div>
+
+<div class="table-wrap">
+  <table id="rfpTable">
+    <thead id="tableHead"></thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  <div id="emptyState" class="empty-state" hidden>No rows match your filters.</div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

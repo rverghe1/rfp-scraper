@@ -1,0 +1,8 @@
+secrets.json*
+*.key
+service_account_key.json*
+.secrets/
+.secrets*
+output/
+*.bak
+*.bak.*
