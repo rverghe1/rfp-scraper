@@ -22,7 +22,13 @@ SPREADSHEET_ID = "1D9N2erN_JEk4WVjeneQOzN2U7mKDls7Sxabx-JOrSBE"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 TABS = {
-    "results": "Scraper Results",
+    # Points at the healthcare-staffing-screened subset of "Scraper Results"
+    # (see core/relevance_screen.py on the scraper side), not the raw tab -
+    # "Scraper Results" includes permissive ESCALATE rows and postings
+    # scraped before a classifier prompt tightening, some of which aren't
+    # actually clinical staffing. The dashboard should only show postings
+    # that passed that second, narrower screen.
+    "results": "Scraper Results (Healthcare Only)",
     "tracker": "Awarded-Historical RFPs",
 }
 

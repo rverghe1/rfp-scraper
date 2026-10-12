@@ -72,7 +72,10 @@ from pathlib import Path
 
 from core.browser import new_page
 from core.matcher import load_facilities, match_facility
-from core.sheets import append_rows, append_tracker_rows, append_test_prompt_rows, HEADER, TRACKER_HEADER
+from core.sheets import (
+    append_rows, append_tracker_rows, append_test_prompt_rows, append_dashboard_rows,
+    HEADER, TRACKER_HEADER,
+)
 from adapters import (
     bonfire, demandstar, wisconsin, njstart, passaicbids, indiana, passportnyc,
     mississippi, bidbuy, pa_emarketplace, scbo, utah, bidnet, magic_ms, michigan,
@@ -249,6 +252,21 @@ def _classify_and_route(portal_name, rows):
 
     if relevant:
         _write_csv_then_sheet(portal_name, "relevant", relevant, HEADER, append_rows)
+
+        # Dashboard-facing second pass: "relevant" already passed the go/no-go
+        # framework, but ESCALATE is deliberately permissive ("real signal,
+        # needs human review") and can admit postings that aren't actually
+        # clinical staffing - plus rows scraped before a prompt tightening
+        # never get retroactively reclassified. This is a narrow topic-only
+        # screen (core/relevance_screen.py) on top of that, feeding a
+        # separate tab the dashboard reads, so non-staffing postings that
+        # cleared the first pass don't show up there.
+        from core.relevance_screen import screen_batch
+        dashboard_relevant = screen_batch(relevant)
+        print(f"[{portal_name}] {len(relevant)} open+relevant -> "
+              f"{len(dashboard_relevant)} healthcare-staffing-screened for dashboard.")
+        if dashboard_relevant:
+            _write_csv_then_sheet(portal_name, "dashboard", dashboard_relevant, HEADER, append_dashboard_rows)
 
 
 def _write_csv_then_sheet(portal_name, kind, rows, header, append_fn):

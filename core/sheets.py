@@ -33,6 +33,12 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 RESULTS_SHEET_NAME = "Scraper Results"
 TRACKER_SHEET_NAME = "Awarded-Historical RFPs"
 TEST_PROMPT_SHEET_NAME = "Scraper Results (Test Prompt)"
+# Healthcare-staffing-screened subset of RESULTS_SHEET_NAME (see
+# core/relevance_screen.py) - what the dashboard reads, so postings that
+# passed the go/no-go framework (including permissive ESCALATEs) but aren't
+# actually clinical staffing don't show up there. Same schema/HEADER as the
+# main tab; this is a filtered view, not a different kind of row.
+DASHBOARD_SHEET_NAME = "Scraper Results (Healthcare Only)"
 
 HEADER = [
     "Portal", "Facility Match", "Bucket", "Title", "Agency", "State",
@@ -165,3 +171,8 @@ def append_test_prompt_rows(rows):
     candidate classifier prompt's output can be compared side-by-side
     without touching production data."""
     return append_rows(rows, sheet_name=TEST_PROMPT_SHEET_NAME, header=HEADER)
+
+
+def append_dashboard_rows(rows):
+    """Convenience wrapper for DASHBOARD_SHEET_NAME - see its definition."""
+    return append_rows(rows, sheet_name=DASHBOARD_SHEET_NAME, header=HEADER)
