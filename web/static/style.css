@@ -199,6 +199,32 @@ tbody tr:last-child td { border-bottom: none; }
   white-space: nowrap;
 }
 
+.slack-link-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slack-link-input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+.slack-link-input:focus { outline: 1px solid var(--accent); }
+
+.slack-link-open {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.slack-link-open:hover { text-decoration: underline; }
+
 .empty-state {
   padding: 32px 12px;
   text-align: center;

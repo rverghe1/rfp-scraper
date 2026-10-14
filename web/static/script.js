@@ -7,6 +7,12 @@
   const FILTERABLE_COLUMNS = ["Portal", "State", "LLM Bucket", "Status"];
   const TITLE_COLUMN = "Title";
   const LINK_COLUMN = "Link";
+  // Dashboard-owned, editable tracking columns - not part of the scraper's
+  // sheet header until the first time anything is marked shared (see
+  // web/app.py's _ensure_tracking_columns), so these always render
+  // regardless of what state.header currently contains.
+  const SHARED_COLUMN = "Shared in Slack";
+  const SLACK_LINK_COLUMN = "Slack Thread Link";
 
   const state = {
     tab: "results",
@@ -130,7 +136,29 @@
   }
 
   function visibleColumns() {
-    return state.header.filter((c) => !HIDDEN_COLUMNS.has(c));
+    const cols = state.header.filter((c) => !HIDDEN_COLUMNS.has(c));
+    // Always shown, even before the sheet has these columns at all (they're
+    // created lazily on first save - see web/app.py).
+    if (!cols.includes(SHARED_COLUMN)) cols.push(SHARED_COLUMN);
+    if (!cols.includes(SLACK_LINK_COLUMN)) cols.push(SLACK_LINK_COLUMN);
+    return cols;
+  }
+
+  async function saveSlackShare(row, shared, link) {
+    const payload = {
+      portal: row["Portal"] || "", title: row["Title"] || "", agency: row["Agency"] || "",
+      shared, link,
+    };
+    const res = await fetch(`/api/rfps/slack?tab=${encodeURIComponent(state.tab)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Server returned ${res.status}`);
+    }
+    return res.json();
   }
 
   function renderHead() {
@@ -163,6 +191,76 @@
   function renderCell(col, row) {
     const td = document.createElement("td");
     const raw = row[col] || "";
+
+    if (col === SHARED_COLUMN) {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = raw.trim().toLowerCase() === "yes";
+      checkbox.addEventListener("change", async () => {
+        const shared = checkbox.checked;
+        checkbox.disabled = true;
+        try {
+          const result = await saveSlackShare(row, shared, row[SLACK_LINK_COLUMN] || "");
+          row[SHARED_COLUMN] = result.shared ? "Yes" : "";
+          row[SLACK_LINK_COLUMN] = result.link || "";
+          render();
+        } catch (err) {
+          checkbox.checked = !shared;
+          showStatus(`Couldn't save: ${err.message}`, "error");
+        } finally {
+          checkbox.disabled = false;
+        }
+      });
+      td.appendChild(checkbox);
+      return td;
+    }
+
+    if (col === SLACK_LINK_COLUMN) {
+      const wrap = document.createElement("div");
+      wrap.className = "slack-link-cell";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Paste Slack thread link…";
+      input.value = raw;
+      input.className = "slack-link-input";
+
+      const commit = async () => {
+        const link = input.value.trim();
+        if (link === raw) return; // no change
+        input.disabled = true;
+        try {
+          // Pasting a link implies you shared it - mark shared automatically.
+          const result = await saveSlackShare(row, link ? true : row[SHARED_COLUMN] === "Yes", link);
+          row[SHARED_COLUMN] = result.shared ? "Yes" : "";
+          row[SLACK_LINK_COLUMN] = result.link || "";
+          render();
+        } catch (err) {
+          input.value = raw;
+          showStatus(`Couldn't save: ${err.message}`, "error");
+        } finally {
+          input.disabled = false;
+        }
+      };
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") input.blur();
+      });
+      wrap.appendChild(input);
+
+      if (raw) {
+        const open = document.createElement("a");
+        open.href = raw;
+        open.target = "_blank";
+        open.rel = "noopener noreferrer";
+        open.className = "slack-link-open";
+        open.textContent = "↗";
+        open.title = "Open thread";
+        wrap.appendChild(open);
+      }
+      td.appendChild(wrap);
+      return td;
+    }
 
     if (col === TITLE_COLUMN && row[LINK_COLUMN]) {
       const a = document.createElement("a");
