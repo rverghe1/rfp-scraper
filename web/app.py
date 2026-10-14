@@ -149,7 +149,7 @@ def update_tracking(update: TrackingUpdate, tab: str = "results"):
     batch = []
     if update.shared is not None:
         batch.append({"range": gspread.utils.rowcol_to_a1(row_num, cols[SHARED_COL]),
-                       "values": [["Yes" if update.shared else ""]]})
+                       "values": [["Yes" if update.shared else "No"]]})
         result["shared"] = update.shared
     if link is not None:
         batch.append({"range": gspread.utils.rowcol_to_a1(row_num, cols[LINK_COL]), "values": [[link]]})
