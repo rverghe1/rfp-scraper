@@ -7,6 +7,7 @@ the repo, with no access to core/ at build time. Keep these in sync if the
 sheet ID or tab names ever change over there.
 """
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -42,9 +43,16 @@ TABS = {
 # not scraper output.
 SHARED_COL = "Shared in Slack"
 LINK_COL = "Slack Thread Link"
-FACILITY_COL = "Facility"
 VERDICT_COL = "Verdict"
-TRACKING_COLS = (SHARED_COL, LINK_COL, FACILITY_COL, VERDICT_COL)
+LAZY_TRACKING_COLS = (SHARED_COL, LINK_COL, VERDICT_COL)
+
+# "Facility" is NOT lazily created like the above - it's core.sheets.HEADER's
+# own column (position 2), always present from the scraper's own writes.
+# The dashboard can still overwrite it (e.g. a manual facility name for a
+# posting with no Salesforce match), it just never needs _ensure_tracking_
+# columns to create it.
+FACILITY_COL = "Facility"
+_HYPERLINK_RE = re.compile(r'=HYPERLINK\("([^"]+)"\s*,\s*"(.*)"\)\s*$', re.IGNORECASE | re.DOTALL)
 
 app = FastAPI(title="RFP Scraper Dashboard")
 
@@ -68,6 +76,24 @@ def get_rfps(tab: str = "results"):
         return {"header": [], "rows": []}
     header, *data_rows = values
     rows = [dict(zip(header, row)) for row in data_rows]
+
+    # get_all_values() returns the FORMATTED display value - a
+    # =HYPERLINK(url,"name") formula shows up as just "name", losing the
+    # url. Re-fetch that one column in FORMULA mode to recover it, exposed
+    # to the frontend as a sibling "Facility Link" field (see
+    # web/static/script.js's facility cell renderer).
+    if FACILITY_COL in header and data_rows:
+        fi = header.index(FACILITY_COL)
+        col_a1 = gspread.utils.rowcol_to_a1(1, fi + 1)
+        col_letter = "".join(c for c in col_a1 if c.isalpha())
+        formula_range = f"{col_letter}2:{col_letter}{len(data_rows) + 1}"
+        formulas = ws.get(formula_range, value_render_option=gspread.utils.ValueRenderOption.formula)
+        for row, frow in zip(rows, formulas):
+            cell = frow[0] if frow else ""
+            m = _HYPERLINK_RE.match(cell.strip())
+            if m:
+                row["Facility Link"] = m.group(1)
+
     return {"header": header, "rows": rows}
 
 
@@ -86,16 +112,18 @@ class TrackingUpdate(BaseModel):
 
 
 def _ensure_tracking_columns(ws, header):
-    """Appends any of TRACKING_COLS missing from the header row (first
-    write ever for that column). Returns a dict of {col_name: 1-indexed
-    column number} for all of TRACKING_COLS.
+    """Appends any of LAZY_TRACKING_COLS missing from the header row (first
+    write ever for that column), plus FACILITY_COL as a defensive fallback
+    in case this tab somehow predates the core.sheets.HEADER rename.
+    Returns a dict of {col_name: 1-indexed column number}.
 
     Worksheets created via core.sheets.get_or_create_worksheet are sized to
     exactly len(HEADER) columns (the sheet grid itself, not just the header
     row) - writing past that hits "exceeds grid limits" from the Sheets API
     even though the header row logically has room to grow, so the grid has
     to be widened first."""
-    to_add = [c for c in TRACKING_COLS if c not in header]
+    wanted = (*LAZY_TRACKING_COLS, FACILITY_COL)
+    to_add = [c for c in wanted if c not in header]
     if to_add:
         needed_cols = len(header) + len(to_add)
         if ws.col_count < needed_cols:
@@ -106,7 +134,7 @@ def _ensure_tracking_columns(ws, header):
             value_input_option="USER_ENTERED",
         )
         header = header + to_add
-    return {c: header.index(c) + 1 for c in TRACKING_COLS}
+    return {c: header.index(c) + 1 for c in wanted}
 
 
 @app.post("/api/rfps/slack")

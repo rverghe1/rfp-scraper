@@ -41,13 +41,13 @@ TEST_PROMPT_SHEET_NAME = "Scraper Results (Test Prompt)"
 DASHBOARD_SHEET_NAME = "Scraper Results (Healthcare Only)"
 
 HEADER = [
-    "Portal", "Facility Match", "Bucket", "Title", "Agency", "State",
+    "Portal", "Facility", "Bucket", "Title", "Agency", "State",
     "Status", "Closing Date", "Link", "Notes", "Scraped At",
     "LLM Bucket", "LLM Reasoning", "LLM Disqualifier", "LLM Lifecycle",
 ]
 
 TRACKER_HEADER = [
-    "Portal", "Facility Match", "State", "Title", "Agency", "Status",
+    "Portal", "Facility", "State", "Title", "Agency", "Status",
     "Award/Close Date", "Link", "Notes", "Scraped At",
     "LLM Bucket", "LLM Reasoning", "LLM Lifecycle",
     "Contract End Date (LLM extracted)",

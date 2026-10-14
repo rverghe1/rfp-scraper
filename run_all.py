@@ -152,14 +152,37 @@ def _build_row(portal, title, agency, state, status, close_date, link, notes, no
     """One row shape shared by both tabs - includes both "Closing Date" and
     "Award/Close Date" pointing at the same value so it slots into whichever
     of HEADER/TRACKER_HEADER ends up being used to write it; extra keys not
-    in a given header are just ignored by core.sheets.append_rows."""
+    in a given header are just ignored by core.sheets.append_rows.
+
+    "Facility" holds the plain matched name here (classify_batch reads this
+    as context - see _apply_llm_classification's facility_key), not a
+    hyperlink - _linkify_facility converts it to a clickable Salesforce link
+    right before writing, using "_facility_sfdc_id" (an extra key, dropped
+    silently by the CSV/sheet writers since it's not in HEADER)."""
     return {
-        "Portal": portal, "Facility Match": fac["NAME"] if fac else "No Matched Facility",
+        "Portal": portal, "Facility": fac["NAME"] if fac else "No Matched Facility",
+        "_facility_sfdc_id": fac["SALESFORCE_ACCOUNT_ID"] if fac else None,
         "Bucket": "FACILITY MATCH" if fac else "NEW LEAD",
         "Title": title, "Agency": agency, "State": (fac["STATE"] if fac else state),
         "Status": status, "Closing Date": close_date, "Award/Close Date": close_date,
         "Link": link, "Notes": notes, "Scraped At": now,
     }
+
+
+def _linkify_facility(rows):
+    """Turns "Facility" from a plain matched name into a Google Sheets
+    HYPERLINK formula pointing at the Salesforce Account page, for rows
+    that had a real facility match. Call this AFTER classification (which
+    needs the plain name as context), right before writing to a sheet -
+    web/app.py separately extracts the underlying URL via a FORMULA-mode
+    read for the dashboard's clickable rendering."""
+    for r in rows:
+        sfdc_id = r.get("_facility_sfdc_id")
+        if sfdc_id:
+            name = r["Facility"].replace('"', "'")
+            url = f"https://clipboardhealth.lightning.force.com/lightning/r/Account/{sfdc_id}/view"
+            r["Facility"] = f'=HYPERLINK("{url}","{name}")'
+    return rows
 
 
 def _apply_llm_classification(rows, framework_prompt=None):
@@ -175,7 +198,7 @@ def _apply_llm_classification(rows, framework_prompt=None):
     classified = classify_batch(
         rows,
         title_key="Title", agency_key="Agency", state_key="State",
-        description_key="Notes", facility_key="Facility Match",
+        description_key="Notes", facility_key="Facility",
         status_key="Status", close_date_key="Closing Date",
         framework_prompt=framework_prompt,
     )
@@ -234,6 +257,7 @@ def _classify_and_route(portal_name, rows):
             k = (r.get("LLM Bucket", ""), r.get("LLM Lifecycle", ""))
             counts[k] = counts.get(k, 0) + 1
         print(f"[{portal_name}] {len(classified)} classified with TEST prompt -> {counts}")
+        _linkify_facility(classified)
         _write_csv_then_sheet(portal_name, "test_prompt", classified, HEADER, append_test_prompt_rows)
         return
 
@@ -245,6 +269,7 @@ def _classify_and_route(portal_name, rows):
 
     relevant = [r for r in classified
                 if r.get("LLM Lifecycle") == "OPEN" and r.get("LLM Bucket") in ("GO", "ESCALATE")]
+    _linkify_facility(relevant)
 
     # Awarded/closed RFP tracking ("Awarded-Historical RFPs" tab) is
     # disabled per request - only open+relevant postings get written now.

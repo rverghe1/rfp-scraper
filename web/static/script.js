@@ -3,7 +3,7 @@
 
   const HIDDEN_COLUMNS = new Set(["Link"]);
   const TRUNCATE_COLUMNS = new Set(["Notes", "LLM Reasoning", "LLM Disqualifier"]);
-  const BADGE_COLUMNS = new Set(["Bucket", "Status", "LLM Bucket", "LLM Lifecycle", "Facility Match"]);
+  const BADGE_COLUMNS = new Set(["Bucket", "Status", "LLM Bucket", "LLM Lifecycle"]);
   const FILTERABLE_COLUMNS = ["Portal", "State", "LLM Bucket", "Status"];
   const TITLE_COLUMN = "Title";
   const LINK_COLUMN = "Link";
@@ -265,25 +265,56 @@
       return td;
     }
 
-    if (col === FACILITY_COLUMN || col === VERDICT_COLUMN) {
-      const field = col === FACILITY_COLUMN ? "facility" : "verdict";
-      const isVerdict = col === VERDICT_COLUMN;
-      const input = document.createElement(isVerdict ? "textarea" : "input");
-      if (!isVerdict) input.type = "text";
-      else {
-        input.rows = 2;
-      }
-      input.placeholder = isVerdict ? "Applying? Why or why not…" : "Facility / hospital name…";
+    if (col === VERDICT_COLUMN) {
+      const textarea = document.createElement("textarea");
+      textarea.rows = 2;
+      textarea.placeholder = "Applying? Why or why not…";
+      textarea.value = raw;
+      textarea.className = "tracking-input tracking-textarea";
+
+      const commit = async () => {
+        const value = textarea.value.trim();
+        if (value === raw) return;
+        textarea.disabled = true;
+        try {
+          const result = await saveTracking(row, { verdict: value });
+          row[col] = result.verdict ?? value;
+          render();
+        } catch (err) {
+          textarea.value = raw;
+          showStatus(`Couldn't save: ${err.message}`, "error");
+        } finally {
+          textarea.disabled = false;
+        }
+      };
+      textarea.addEventListener("blur", commit);
+      td.appendChild(textarea);
+      return td;
+    }
+
+    if (col === FACILITY_COLUMN) {
+      // "Facility" is scraper-owned (core.sheets.HEADER) with a Salesforce
+      // HYPERLINK formula when matched - get_rfps() can't send the formula
+      // through JSON directly, so it attaches the extracted URL as a
+      // sibling "Facility Link" field (see web/app.py). Editing here still
+      // works for postings with no Salesforce match (manual name entry).
+      const wrap = document.createElement("div");
+      wrap.className = "slack-link-cell";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Facility / hospital name…";
       input.value = raw;
-      input.className = "tracking-input" + (isVerdict ? " tracking-textarea" : "");
+      input.className = "tracking-input";
 
       const commit = async () => {
         const value = input.value.trim();
         if (value === raw) return;
         input.disabled = true;
         try {
-          const result = await saveTracking(row, { [field]: value });
-          row[col] = result[field] ?? value;
+          const result = await saveTracking(row, { facility: value });
+          row[col] = result.facility ?? value;
+          delete row["Facility Link"]; // stale after a manual overwrite
           render();
         } catch (err) {
           input.value = raw;
@@ -293,12 +324,22 @@
         }
       };
       input.addEventListener("blur", commit);
-      if (!isVerdict) {
-        input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") input.blur();
-        });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") input.blur();
+      });
+      wrap.appendChild(input);
+
+      if (row["Facility Link"]) {
+        const open = document.createElement("a");
+        open.href = row["Facility Link"];
+        open.target = "_blank";
+        open.rel = "noopener noreferrer";
+        open.className = "slack-link-open";
+        open.textContent = "↗";
+        open.title = "Open in Salesforce";
+        wrap.appendChild(open);
       }
-      td.appendChild(input);
+      td.appendChild(wrap);
       return td;
     }
 
