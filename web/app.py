@@ -29,7 +29,6 @@ TABS = {
     # actually clinical staffing. The dashboard should only show postings
     # that passed that second, narrower screen.
     "results": "Scraper Results (Healthcare Only)",
-    "tracker": "Awarded-Historical RFPs",
 }
 
 app = FastAPI(title="RFP Scraper Dashboard")
