@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 import gspread
+from dateutil import parser as date_parser
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from google.oauth2.service_account import Credentials
@@ -54,6 +55,49 @@ LAZY_TRACKING_COLS = (SHARED_COL, LINK_COL, VERDICT_COL)
 FACILITY_COL = "Facility"
 _HYPERLINK_RE = re.compile(r'=HYPERLINK\("([^"]+)"\s*,\s*"(.*)"\)\s*$', re.IGNORECASE | re.DOTALL)
 
+# Every portal formats its own closing date and state text differently
+# ("10/08/2026", "1/31/2031 9:00:00 AM", "2026-10-08 16:00", "Oct 26, 2026";
+# "California" vs "CA") - normalized here, at display time, rather than at
+# scrape time, so the original scraped text stays intact in the sheet for
+# auditing while the dashboard always shows one consistent format.
+_STATE_NAME_TO_ABBREV = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE",
+    "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+    "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+}
+
+
+def _normalize_state(value):
+    if not value:
+        return value
+    abbrev = _STATE_NAME_TO_ABBREV.get(value.strip().lower())
+    return abbrev if abbrev else value.strip()
+
+
+def _normalize_date(value):
+    if not value or not value.strip():
+        return value
+    try:
+        # dateutil defaults ambiguous text to today's date/time for missing
+        # fields, which is fine here since every source string already has
+        # a real month/day/year - only the clock time (if any) gets dropped.
+        d = date_parser.parse(value.strip(), fuzzy=True)
+    except (ValueError, OverflowError):
+        return value  # leave anything unparseable exactly as scraped
+    return f"{d.strftime('%b')} {d.day}, {d.year}"
+
+
 app = FastAPI(title="RFP Scraper Dashboard")
 
 
@@ -76,6 +120,12 @@ def get_rfps(tab: str = "results"):
         return {"header": [], "rows": []}
     header, *data_rows = values
     rows = [dict(zip(header, row)) for row in data_rows]
+
+    for row in rows:
+        if "Closing Date" in row:
+            row["Closing Date"] = _normalize_date(row["Closing Date"])
+        if "State" in row:
+            row["State"] = _normalize_state(row["State"])
 
     # get_all_values() returns the FORMATTED display value - a
     # =HYPERLINK(url,"name") formula shows up as just "name", losing the

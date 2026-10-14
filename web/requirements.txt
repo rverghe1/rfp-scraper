@@ -2,3 +2,4 @@ fastapi==0.115.6
 uvicorn==0.34.0
 gspread==6.2.1
 google-auth==2.50.0
+python-dateutil==2.9.0.post0
