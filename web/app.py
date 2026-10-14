@@ -76,9 +76,18 @@ class SlackShareUpdate(BaseModel):
 
 def _ensure_tracking_columns(ws, header):
     """Appends SHARED_COL/LINK_COL to the header row if they're not there
-    yet (first write ever). Returns their 1-indexed column numbers."""
+    yet (first write ever). Returns their 1-indexed column numbers.
+
+    Worksheets created via core.sheets.get_or_create_worksheet are sized to
+    exactly len(HEADER) columns (the sheet grid itself, not just the header
+    row) - writing past that hits "exceeds grid limits" from the Sheets API
+    even though the header row logically has room to grow, so the grid has
+    to be widened first."""
     to_add = [c for c in (SHARED_COL, LINK_COL) if c not in header]
     if to_add:
+        needed_cols = len(header) + len(to_add)
+        if ws.col_count < needed_cols:
+            ws.resize(cols=needed_cols)
         ws.update(
             gspread.utils.rowcol_to_a1(1, len(header) + 1),
             [to_add],
