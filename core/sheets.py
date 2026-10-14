@@ -71,7 +71,43 @@ def get_or_create_worksheet(sheet_name=RESULTS_SHEET_NAME, header=HEADER):
     return ws
 
 
-def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER):
+_STATE_NAME_TO_ABBREV = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE",
+    "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+    "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+}
+
+
+def _normalize_cross_portal_key(title, state, closing_date):
+    """Same real-world posting often gets scraped from more than one portal
+    (confirmed: a Passaic County, NJ posting appeared on both BidNet Direct
+    and PassaicBids with an identical title and closing date, but one
+    portal wrote the state as "New Jersey" and the other as "NJ" - only
+    Agency/Link/Portal/State-spelling differed). Normalized (lowercased,
+    whitespace-collapsed) title + state-abbreviation + closing date is
+    distinctive enough to catch that pattern without the false-positive
+    risk of matching on title alone (several portals post genuinely
+    different RFPs under generic titles like "Nurse Staffing" in different
+    states)."""
+    norm_title = " ".join((title or "").lower().split())
+    state_clean = (state or "").strip().lower()
+    norm_state = _STATE_NAME_TO_ABBREV.get(state_clean, state_clean)
+    norm_date = (closing_date or "").strip().lower()
+    return (norm_title, norm_state, norm_date)
+
+
+def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER, cross_portal_dedupe=False):
     """rows: list of dicts matching `header` keys (missing keys become '').
     Upserts on (Portal, Title, Agency): a row whose key already exists in
     the sheet gets its scraper/LLM-owned columns overwritten in place with
@@ -83,7 +119,16 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER):
     populate them anyway, so a blind full-row overwrite would silently wipe
     out anything a human typed in there. Updates are sent as one batched
     call, not one API call per row, to avoid the Sheets rate limit hit
-    earlier in this project from many individual writes."""
+    earlier in this project from many individual writes.
+
+    cross_portal_dedupe=True additionally checks title+state+closing-date
+    against every existing row regardless of portal (see
+    _normalize_cross_portal_key) - a match SKIPS the incoming row entirely
+    rather than overwriting, so whichever portal's row already exists stays
+    as the one source of truth instead of being clobbered by a later
+    portal's version of the same posting. Only used for the dashboard tab
+    (append_dashboard_rows) - the raw "Scraper Results" tab stays a complete
+    per-portal log."""
     ws = get_or_create_worksheet(sheet_name, header=header)
     existing = ws.get_all_values()
     if not existing:
@@ -106,14 +151,24 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER):
     except ValueError:
         pi = ti = ai = None
 
+    si = sheet_header.index("State") if "State" in sheet_header else None
+    ci = sheet_header.index("Closing Date") if "Closing Date" in sheet_header else None
+
     # key -> 1-indexed sheet row number, for targeting an update.
     key_to_row_num = {}
+    cross_portal_keys = set()
     if pi is not None:
         for i, row in enumerate(existing[1:], start=2):
             key = (row[pi] if pi < len(row) else "",
                    row[ti] if ti < len(row) else "",
                    row[ai] if ai < len(row) else "")
             key_to_row_num[key] = i
+            if cross_portal_dedupe and si is not None and ci is not None:
+                cross_portal_keys.add(_normalize_cross_portal_key(
+                    row[ti] if ti < len(row) else "",
+                    row[si] if si < len(row) else "",
+                    row[ci] if ci < len(row) else "",
+                ))
 
     # Columns we never overwrite on update - manual/human-owned cells.
     manual_cols = {h for h in header if "(manual)" in h.lower()}
@@ -121,12 +176,25 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER):
     new_row_values = []
     batch_updates = []  # [{"range": "A5:O5", "values": [[...]]}]
     seen_this_batch = set()
+    cross_portal_seen_this_batch = set()
     updated_count = 0
+    skipped_duplicates = []
     for r in rows:
         key = (r.get("Portal", ""), r.get("Title", ""), r.get("Agency", ""))
         if key in seen_this_batch:
             continue  # dedupe within this batch too, not just against the sheet
         seen_this_batch.add(key)
+
+        if cross_portal_dedupe:
+            xkey = _normalize_cross_portal_key(r.get("Title", ""), r.get("State", ""), r.get("Closing Date", ""))
+            # Only treat it as a cross-portal duplicate if it's NOT the exact
+            # same (Portal, Title, Agency) row we're about to update in
+            # place below - that's a legitimate refresh, not a duplicate.
+            is_known_row = key in key_to_row_num
+            if not is_known_row and (xkey in cross_portal_keys or xkey in cross_portal_seen_this_batch):
+                skipped_duplicates.append((r.get("Portal", ""), r.get("Title", "")))
+                continue
+            cross_portal_seen_this_batch.add(xkey)
 
         row_values = [r.get(h, "") for h in header]
         existing_row_num = key_to_row_num.get(key)
@@ -154,6 +222,10 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER):
     if new_row_values:
         ws.append_rows(new_row_values, value_input_option="USER_ENTERED")
 
+    if skipped_duplicates:
+        print(f"  ({len(skipped_duplicates)} cross-portal duplicate(s) skipped: "
+              + ", ".join(f'{p}/{t[:40]}' for p, t in skipped_duplicates) + ")")
+
     if updated_count:
         print(f"  ({updated_count} existing row(s) updated in place)")
     return len(new_row_values)
@@ -174,5 +246,8 @@ def append_test_prompt_rows(rows):
 
 
 def append_dashboard_rows(rows):
-    """Convenience wrapper for DASHBOARD_SHEET_NAME - see its definition."""
-    return append_rows(rows, sheet_name=DASHBOARD_SHEET_NAME, header=HEADER)
+    """Convenience wrapper for DASHBOARD_SHEET_NAME - see its definition.
+    cross_portal_dedupe=True since this is the tab users actually read - a
+    posting scraped from two portals (e.g. the same NJ county RFP listed on
+    both BidNet Direct and PassaicBids) should only show up once here."""
+    return append_rows(rows, sheet_name=DASHBOARD_SHEET_NAME, header=HEADER, cross_portal_dedupe=True)
