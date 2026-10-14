@@ -199,35 +199,24 @@ tbody tr:last-child td { border-bottom: none; }
   white-space: nowrap;
 }
 
-.slack-link-cell {
+/* .link-field wraps an editable text input + an optional "open" icon -
+   used for Facility (main table, narrow column) and Slack Thread Link
+   (detail panel, wide column). min-width:0 on the flex child is the fix
+   for the input overflowing into the next table cell - without it a flex
+   item won't shrink below its content/intrinsic width even when the
+   column itself is narrower. */
+.link-field {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
-
-.slack-link-input {
-  flex: 1 1 auto;
-  min-width: 120px;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 12px;
-}
-.slack-link-input:focus { outline: 1px solid var(--accent); }
-
-.slack-link-open {
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 13px;
-  flex-shrink: 0;
-}
-.slack-link-open:hover { text-decoration: underline; }
 
 .tracking-input {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
-  min-width: 140px;
+  max-width: 100%;
   padding: 5px 7px;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -239,10 +228,18 @@ tbody tr:last-child td { border-bottom: none; }
 .tracking-input:focus { outline: 1px solid var(--accent); }
 
 .tracking-textarea {
-  min-width: 200px;
+  min-width: 0;
   resize: vertical;
   line-height: 1.4;
 }
+
+.link-open {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.link-open:hover { text-decoration: underline; }
 
 .empty-state {
   padding: 32px 12px;
@@ -253,3 +250,24 @@ tbody tr:last-child td { border-bottom: none; }
 @media (max-width: 480px) {
   .topbar h1 { font-size: 16px; }
 }
+
+/* --- expandable rows: click a row to reveal the rest of its fields --- */
+tbody tr.rfp-row { cursor: pointer; }
+tbody tr.rfp-row.open { background: var(--row-hover); }
+.chevron { display: inline-block; width: 14px; color: var(--text-dim); transition: transform 0.12s; }
+tr.rfp-row.open .chevron { transform: rotate(90deg); }
+
+tbody tr.detail-row:hover { background: transparent; }
+tbody tr.detail-row td { max-width: none; background: var(--bg); padding: 14px 16px; }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px 24px;
+}
+.detail-grid .wide { grid-column: 1 / -1; }
+.detail-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; }
+.detail-value { white-space: pre-wrap; word-break: break-word; }
+.detail-value.empty { color: var(--text-dim); }
+.detail-section { grid-column: 1 / -1; font-weight: 600; font-size: 13px; padding-top: 6px; border-top: 1px solid var(--border); }
+.detail-section:first-child { border-top: none; padding-top: 0; }
