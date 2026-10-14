@@ -225,6 +225,25 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .slack-link-open:hover { text-decoration: underline; }
 
+.tracking-input {
+  width: 100%;
+  min-width: 140px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+}
+.tracking-input:focus { outline: 1px solid var(--accent); }
+
+.tracking-textarea {
+  min-width: 200px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
 .empty-state {
   padding: 32px 12px;
   text-align: center;

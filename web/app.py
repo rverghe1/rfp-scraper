@@ -8,6 +8,7 @@ sheet ID or tab names ever change over there.
 """
 import os
 from pathlib import Path
+from typing import Optional
 
 import gspread
 from fastapi import FastAPI, HTTPException
@@ -35,11 +36,15 @@ TABS = {
 # Dashboard-owned tracking columns, appended to the right of whatever
 # run_all.py/core.sheets.append_rows writes (15 columns, A:O) - that upsert
 # path only ever reads/writes column indices up to its own header length,
-# so these two living in columns P/Q is safe from being clobbered by a
+# so these living in columns P onward are safe from being clobbered by a
 # future scraper run. Not in core.sheets.HEADER on purpose: this is
-# dashboard-user state (did I post this in Slack), not scraper output.
+# dashboard-user state (did I post this in Slack, what did we decide),
+# not scraper output.
 SHARED_COL = "Shared in Slack"
 LINK_COL = "Slack Thread Link"
+FACILITY_COL = "Facility"
+VERDICT_COL = "Verdict"
+TRACKING_COLS = (SHARED_COL, LINK_COL, FACILITY_COL, VERDICT_COL)
 
 app = FastAPI(title="RFP Scraper Dashboard")
 
@@ -66,24 +71,31 @@ def get_rfps(tab: str = "results"):
     return {"header": header, "rows": rows}
 
 
-class SlackShareUpdate(BaseModel):
+class TrackingUpdate(BaseModel):
     portal: str
     title: str
     agency: str
-    shared: bool
-    link: str = ""
+    # None = leave that field untouched; only fields explicitly provided
+    # (not None) get written. "shared" is the one exception that's always
+    # meaningful as a bool, not Optional, since the UI always sends it
+    # alongside a link edit (see web/static/script.js).
+    shared: Optional[bool] = None
+    link: Optional[str] = None
+    facility: Optional[str] = None
+    verdict: Optional[str] = None
 
 
 def _ensure_tracking_columns(ws, header):
-    """Appends SHARED_COL/LINK_COL to the header row if they're not there
-    yet (first write ever). Returns their 1-indexed column numbers.
+    """Appends any of TRACKING_COLS missing from the header row (first
+    write ever for that column). Returns a dict of {col_name: 1-indexed
+    column number} for all of TRACKING_COLS.
 
     Worksheets created via core.sheets.get_or_create_worksheet are sized to
     exactly len(HEADER) columns (the sheet grid itself, not just the header
     row) - writing past that hits "exceeds grid limits" from the Sheets API
     even though the header row logically has room to grow, so the grid has
     to be widened first."""
-    to_add = [c for c in (SHARED_COL, LINK_COL) if c not in header]
+    to_add = [c for c in TRACKING_COLS if c not in header]
     if to_add:
         needed_cols = len(header) + len(to_add)
         if ws.col_count < needed_cols:
@@ -94,11 +106,11 @@ def _ensure_tracking_columns(ws, header):
             value_input_option="USER_ENTERED",
         )
         header = header + to_add
-    return header.index(SHARED_COL) + 1, header.index(LINK_COL) + 1
+    return {c: header.index(c) + 1 for c in TRACKING_COLS}
 
 
 @app.post("/api/rfps/slack")
-def update_slack_share(update: SlackShareUpdate, tab: str = "results"):
+def update_tracking(update: TrackingUpdate, tab: str = "results"):
     if tab not in TABS:
         raise HTTPException(400, f"Unknown tab '{tab}' - expected one of {list(TABS)}")
     try:
@@ -125,16 +137,35 @@ def update_slack_share(update: SlackShareUpdate, tab: str = "results"):
     if row_num is None:
         raise HTTPException(404, "No matching row found (Portal/Title/Agency didn't match any row)")
 
-    shared_col, link_col = _ensure_tracking_columns(ws, header)
-    link = update.link if update.shared else ""
-    ws.batch_update(
-        [
-            {"range": gspread.utils.rowcol_to_a1(row_num, shared_col), "values": [["Yes" if update.shared else ""]]},
-            {"range": gspread.utils.rowcol_to_a1(row_num, link_col), "values": [[link]]},
-        ],
-        value_input_option="USER_ENTERED",
-    )
-    return {"shared": update.shared, "link": link}
+    cols = _ensure_tracking_columns(ws, header)
+    if update.shared is True:
+        link = update.link if update.link is not None else ""
+    elif update.shared is False:
+        link = ""  # unsharing clears the link too
+    else:
+        link = update.link  # None = don't touch; a string = explicit link-only update
+
+    result = {}
+    batch = []
+    if update.shared is not None:
+        batch.append({"range": gspread.utils.rowcol_to_a1(row_num, cols[SHARED_COL]),
+                       "values": [["Yes" if update.shared else ""]]})
+        result["shared"] = update.shared
+    if link is not None:
+        batch.append({"range": gspread.utils.rowcol_to_a1(row_num, cols[LINK_COL]), "values": [[link]]})
+        result["link"] = link
+    if update.facility is not None:
+        batch.append({"range": gspread.utils.rowcol_to_a1(row_num, cols[FACILITY_COL]),
+                       "values": [[update.facility]]})
+        result["facility"] = update.facility
+    if update.verdict is not None:
+        batch.append({"range": gspread.utils.rowcol_to_a1(row_num, cols[VERDICT_COL]),
+                       "values": [[update.verdict]]})
+        result["verdict"] = update.verdict
+
+    if batch:
+        ws.batch_update(batch, value_input_option="USER_ENTERED")
+    return result
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")

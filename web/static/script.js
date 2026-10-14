@@ -13,6 +13,8 @@
   // regardless of what state.header currently contains.
   const SHARED_COLUMN = "Shared in Slack";
   const SLACK_LINK_COLUMN = "Slack Thread Link";
+  const FACILITY_COLUMN = "Facility";
+  const VERDICT_COLUMN = "Verdict";
 
   const state = {
     tab: "results",
@@ -139,15 +141,16 @@
     const cols = state.header.filter((c) => !HIDDEN_COLUMNS.has(c));
     // Always shown, even before the sheet has these columns at all (they're
     // created lazily on first save - see web/app.py).
-    if (!cols.includes(SHARED_COLUMN)) cols.push(SHARED_COLUMN);
-    if (!cols.includes(SLACK_LINK_COLUMN)) cols.push(SLACK_LINK_COLUMN);
+    for (const c of [FACILITY_COLUMN, VERDICT_COLUMN, SHARED_COLUMN, SLACK_LINK_COLUMN]) {
+      if (!cols.includes(c)) cols.push(c);
+    }
     return cols;
   }
 
-  async function saveSlackShare(row, shared, link) {
+  async function saveTracking(row, fields) {
     const payload = {
       portal: row["Portal"] || "", title: row["Title"] || "", agency: row["Agency"] || "",
-      shared, link,
+      ...fields,
     };
     const res = await fetch(`/api/rfps/slack?tab=${encodeURIComponent(state.tab)}`, {
       method: "POST",
@@ -200,7 +203,7 @@
         const shared = checkbox.checked;
         checkbox.disabled = true;
         try {
-          const result = await saveSlackShare(row, shared, row[SLACK_LINK_COLUMN] || "");
+          const result = await saveTracking(row, { shared, link: row[SLACK_LINK_COLUMN] || "" });
           row[SHARED_COLUMN] = result.shared ? "Yes" : "";
           row[SLACK_LINK_COLUMN] = result.link || "";
           render();
@@ -231,7 +234,7 @@
         input.disabled = true;
         try {
           // Pasting a link implies you shared it - mark shared automatically.
-          const result = await saveSlackShare(row, link ? true : row[SHARED_COLUMN] === "Yes", link);
+          const result = await saveTracking(row, { shared: link ? true : row[SHARED_COLUMN] === "Yes", link });
           row[SHARED_COLUMN] = result.shared ? "Yes" : "";
           row[SLACK_LINK_COLUMN] = result.link || "";
           render();
@@ -259,6 +262,43 @@
         wrap.appendChild(open);
       }
       td.appendChild(wrap);
+      return td;
+    }
+
+    if (col === FACILITY_COLUMN || col === VERDICT_COLUMN) {
+      const field = col === FACILITY_COLUMN ? "facility" : "verdict";
+      const isVerdict = col === VERDICT_COLUMN;
+      const input = document.createElement(isVerdict ? "textarea" : "input");
+      if (!isVerdict) input.type = "text";
+      else {
+        input.rows = 2;
+      }
+      input.placeholder = isVerdict ? "Applying? Why or why not…" : "Facility / hospital name…";
+      input.value = raw;
+      input.className = "tracking-input" + (isVerdict ? " tracking-textarea" : "");
+
+      const commit = async () => {
+        const value = input.value.trim();
+        if (value === raw) return;
+        input.disabled = true;
+        try {
+          const result = await saveTracking(row, { [field]: value });
+          row[col] = result[field] ?? value;
+          render();
+        } catch (err) {
+          input.value = raw;
+          showStatus(`Couldn't save: ${err.message}`, "error");
+        } finally {
+          input.disabled = false;
+        }
+      };
+      input.addEventListener("blur", commit);
+      if (!isVerdict) {
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") input.blur();
+        });
+      }
+      td.appendChild(input);
       return td;
     }
 
