@@ -775,6 +775,50 @@ def run_bidnet_mitn(facilities):
     _classify_and_route("bidnet_mitn", rows)
 
 
+def _run_bidnet_group(portal_label, group, state_abbrev, state_name, facilities):
+    """Shared body for the per-state BidNet purchasing-group portals below -
+    same local-government pattern as MITN (see run_bidnet_mitn), added for
+    CA/OH/WA/VA after a Salesforce query showed these four states hold
+    1,200+ of our Long-Term-Care facilities with zero scraper coverage
+    (every other large-facility-count state already has either its own
+    state-portal adapter or an existing BidNet group). Confirmed live and
+    returning real results for each of the four groups before wiring in
+    (2026-10-16): california=9, ohio=3, washington=0 ("nursing" specifically,
+    but staffing/health/medical all returned hits - the group page itself is
+    real, just thin on nursing-worded postings at check time), virginia=5."""
+    all_hits = []
+    with new_page(headless=True, stealth=True) as page:
+        for kw in KEYWORDS:
+            all_hits.extend(bidnet.search(page, kw, group=group))
+
+    deduped = _dedupe(all_hits, key="link")
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = []
+    for r in deduped:
+        # Same as MITN: BidNet rows carry only the state name as org, no
+        # agency - the facility matcher gets a state gate only.
+        fac = _match_facility(r["title"], state_name, facilities)
+        rows.append(_build_row(portal_label, r["title"], r["org"], state_abbrev, "",
+                                r["close_date"], r["link"], f"ref={r['ref']} group={group}", now, fac))
+    _classify_and_route(f"bidnet_{group}", rows)
+
+
+def run_bidnet_california(facilities):
+    _run_bidnet_group("BidNet California (local)", "california", "CA", "California", facilities)
+
+
+def run_bidnet_ohio(facilities):
+    _run_bidnet_group("BidNet Ohio (local)", "ohio", "OH", "Ohio", facilities)
+
+
+def run_bidnet_washington(facilities):
+    _run_bidnet_group("BidNet Washington (local)", "washington", "WA", "Washington", facilities)
+
+
+def run_bidnet_virginia(facilities):
+    _run_bidnet_group("BidNet Virginia (local)", "virginia", "VA", "Virginia", facilities)
+
+
 def run_movers_mo(facilities):
     # Missouri STATE board - MissouriBUYS powered by MOVERS (Oracle Fusion).
     # No browser: the public "Solicitation Abstracts" listing is backed by
@@ -927,6 +971,12 @@ def run_nh_dhhs(facilities):
 #   bidnet_mitn  - Michigan LOCAL governments via BidNet's MITN purchasing group
 #                  (the counties running our 29 MI facilities) - see run_bidnet_mitn.
 #                  `michigan` below is the STATE board and never sees county bids.
+#   bidnet_california, bidnet_ohio, bidnet_washington, bidnet_virginia - same
+#                  BidNet purchasing-group pattern as MITN, added 2026-10-16
+#                  after a Salesforce query showed these 4 states hold 1,200+
+#                  of our LTC facilities with no scraper coverage at all -
+#                  the single biggest coverage gap found so far. See
+#                  _run_bidnet_group.
 #   movers_mo    - Missouri STATE board (MissouriBUYS powered by MOVERS), API-
 #                  backed, no browser. 17 MO facilities are county-run, so...
 #   instantmarkets_mo - ...Missouri's state-sponsored Bid Locator (InstantMarkets)
@@ -992,6 +1042,10 @@ PORTALS = {
     "wisconsin": run_wisconsin,
     "michigan": run_michigan,
     "bidnet_mitn": run_bidnet_mitn,
+    "bidnet_california": run_bidnet_california,
+    "bidnet_ohio": run_bidnet_ohio,
+    "bidnet_washington": run_bidnet_washington,
+    "bidnet_virginia": run_bidnet_virginia,
     "nh_dhhs": run_nh_dhhs,
     "pa_emarketplace": run_pa_emarketplace,
     "mississippi": run_mississippi,
