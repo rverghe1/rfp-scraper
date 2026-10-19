@@ -220,7 +220,20 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER, cross_portal
     if batch_updates:
         ws.batch_update(batch_updates, value_input_option="USER_ENTERED")
     if new_row_values:
-        ws.append_rows(new_row_values, value_input_option="USER_ENTERED")
+        # Write to an explicit A1 range (next empty row through len(header)
+        # columns) instead of ws.append_rows()'s table-autodetection -
+        # confirmed on the dashboard tab (2026-10-19) that autodetection
+        # picks the wrong starting column once the sheet has extra blank-
+        # header columns to the right (from the dashboard's lazily-added
+        # tracking columns outgrowing a prior ws.resize()): each append got
+        # shifted further right than the last (offsets of 14, 28, 28, 42
+        # columns for 4 consecutive appends), landing new rows' data under
+        # the wrong headers entirely. An explicit range removes any
+        # ambiguity about which column a new row starts at.
+        start_row = len(existing) + 1
+        start_cell = gspread.utils.rowcol_to_a1(start_row, 1)
+        end_cell = gspread.utils.rowcol_to_a1(start_row + len(new_row_values) - 1, len(header))
+        ws.update(f"{start_cell}:{end_cell}", new_row_values, value_input_option="USER_ENTERED")
 
     if skipped_duplicates:
         print(f"  ({len(skipped_duplicates)} cross-portal duplicate(s) skipped: "
