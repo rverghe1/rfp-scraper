@@ -80,7 +80,7 @@ from adapters import (
     bonfire, demandstar, wisconsin, njstart, passaicbids, indiana, passportnyc,
     mississippi, bidbuy, pa_emarketplace, scbo, utah, bidnet, magic_ms, michigan,
     nh_dhhs, commbuys, oregonbuys, emma_md, nyscr, edison_tn, arbuy, movers_mo,
-    instantmarkets_mo,
+    instantmarkets_mo, cal_eprocure,
 )
 import requests
 
@@ -581,6 +581,25 @@ def run_edison_tn(facilities):
         for r in deduped
     ]
     _classify_and_route("edison_tn", rows)
+
+
+def run_cal_eprocure(facilities):
+    # Needs stealth=True - plain headless Playwright gets a bare 403 here,
+    # same fingerprint check as BidNet Direct (see adapters/bidnet.py).
+    all_hits = []
+    with new_page(headless=True, stealth=True) as page:
+        for kw in KEYWORDS:
+            all_hits.extend(cal_eprocure.search(page, kw))
+
+    deduped = _dedupe(all_hits)
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = [
+        _build_row("Cal eProcure (CSCR)", r["title"], r["org"], "California", r["status"],
+                   r["close_date"], r["link"], f"ref={r['ref']}", now,
+                   _match_facility(r["title"], f"{r['org']}, California", facilities))
+        for r in deduped
+    ]
+    _classify_and_route("cal_eprocure", rows)
 
 
 def run_arbuy(facilities):
@@ -1103,6 +1122,7 @@ PORTALS = {
     "bidnet_kansas": run_bidnet_kansas,
     "bidnet_florida": run_bidnet_florida,
     "bidnet_north_carolina": run_bidnet_north_carolina,
+    "cal_eprocure": run_cal_eprocure,
     "nh_dhhs": run_nh_dhhs,
     "pa_emarketplace": run_pa_emarketplace,
     "mississippi": run_mississippi,
