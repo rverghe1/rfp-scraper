@@ -819,6 +819,50 @@ def run_bidnet_virginia(facilities):
     _run_bidnet_group("BidNet Virginia (local)", "virginia", "VA", "Virginia", facilities)
 
 
+# Added 2026-10-19: the next-biggest uncovered-by-anything states by LTC
+# facility count (MN=109, IA=99, KS=78, NC=66, CT=58, FL=47, GA=45, MT=39 -
+# none of these appear in Mike's credentialed-portal inventory at all, so
+# unlike CA/OH/WA/VA there's no dedicated-adapter path available either;
+# BidNet's local-gov purchasing groups are the only realistic coverage for
+# now). Confirmed live before wiring in (staffing/nursing/health/medical
+# combined, max_pages=1 each): georgia=42, minnesota=35, connecticut=23,
+# iowa=18, montana=16, kansas=11, florida=3, north_carolina=0 (page itself
+# confirmed real via page title - just thin on these keywords at check
+# time). North Carolina's actual BidNet slug is "north-carolina", not the
+# "northcarolina"/"nc" forms that seemed more obvious - confirmed by title
+# check since those variants 404.
+def run_bidnet_georgia(facilities):
+    _run_bidnet_group("BidNet Georgia (local)", "georgia", "GA", "Georgia", facilities)
+
+
+def run_bidnet_minnesota(facilities):
+    _run_bidnet_group("BidNet Minnesota (local)", "minnesota", "MN", "Minnesota", facilities)
+
+
+def run_bidnet_connecticut(facilities):
+    _run_bidnet_group("BidNet Connecticut (local)", "connecticut", "CT", "Connecticut", facilities)
+
+
+def run_bidnet_iowa(facilities):
+    _run_bidnet_group("BidNet Iowa (local)", "iowa", "IA", "Iowa", facilities)
+
+
+def run_bidnet_montana(facilities):
+    _run_bidnet_group("BidNet Montana (local)", "montana", "MT", "Montana", facilities)
+
+
+def run_bidnet_kansas(facilities):
+    _run_bidnet_group("BidNet Kansas (local)", "kansas", "KS", "Kansas", facilities)
+
+
+def run_bidnet_florida(facilities):
+    _run_bidnet_group("BidNet Florida (local)", "florida", "FL", "Florida", facilities)
+
+
+def run_bidnet_north_carolina(facilities):
+    _run_bidnet_group("BidNet North Carolina (local)", "north-carolina", "NC", "North Carolina", facilities)
+
+
 def run_movers_mo(facilities):
     # Missouri STATE board - MissouriBUYS powered by MOVERS (Oracle Fusion).
     # No browser: the public "Solicitation Abstracts" listing is backed by
@@ -977,6 +1021,11 @@ def run_nh_dhhs(facilities):
 #                  of our LTC facilities with no scraper coverage at all -
 #                  the single biggest coverage gap found so far. See
 #                  _run_bidnet_group.
+#   bidnet_georgia, bidnet_minnesota, bidnet_connecticut, bidnet_iowa,
+#                  bidnet_montana, bidnet_kansas, bidnet_florida,
+#                  bidnet_north_carolina - same pattern, added 2026-10-19 for
+#                  the next-biggest uncovered-by-anything states (none of
+#                  these 8 appear in Mike's credentialed inventory at all).
 #   movers_mo    - Missouri STATE board (MissouriBUYS powered by MOVERS), API-
 #                  backed, no browser. 17 MO facilities are county-run, so...
 #   instantmarkets_mo - ...Missouri's state-sponsored Bid Locator (InstantMarkets)
@@ -1046,6 +1095,14 @@ PORTALS = {
     "bidnet_ohio": run_bidnet_ohio,
     "bidnet_washington": run_bidnet_washington,
     "bidnet_virginia": run_bidnet_virginia,
+    "bidnet_georgia": run_bidnet_georgia,
+    "bidnet_minnesota": run_bidnet_minnesota,
+    "bidnet_connecticut": run_bidnet_connecticut,
+    "bidnet_iowa": run_bidnet_iowa,
+    "bidnet_montana": run_bidnet_montana,
+    "bidnet_kansas": run_bidnet_kansas,
+    "bidnet_florida": run_bidnet_florida,
+    "bidnet_north_carolina": run_bidnet_north_carolina,
     "nh_dhhs": run_nh_dhhs,
     "pa_emarketplace": run_pa_emarketplace,
     "mississippi": run_mississippi,
