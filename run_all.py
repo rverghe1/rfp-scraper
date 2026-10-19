@@ -80,7 +80,8 @@ from adapters import (
     bonfire, demandstar, wisconsin, njstart, passaicbids, indiana, passportnyc,
     mississippi, bidbuy, pa_emarketplace, scbo, utah, bidnet, magic_ms, michigan,
     nh_dhhs, commbuys, oregonbuys, emma_md, nyscr, edison_tn, arbuy, movers_mo,
-    instantmarkets_mo, cal_eprocure,
+    instantmarkets_mo, cal_eprocure, kentucky_vss, colorado_vss, nhprocure,
+    arkansas_osp,
 )
 import requests
 
@@ -976,6 +977,42 @@ def run_michigan(facilities):
     _classify_and_route("michigan", rows)
 
 
+def run_kentucky_vss(facilities):
+    # Same CGI Advantage VSS platform as Michigan (see adapters/advantage_vss.py)
+    # - public, no login, same stealth requirement.
+    all_hits = []
+    with new_page(headless=True, stealth=True) as page:
+        for kw in KEYWORDS:
+            all_hits.extend(kentucky_vss.search(page, kw))
+
+    deduped = _dedupe(all_hits)
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = []
+    for r in deduped:
+        fac = _match_facility(r["title"], f"{r['org']}, Kentucky", facilities)
+        rows.append(_build_row("Kentucky VSS", r["title"], r["org"], "KY", r["status"],
+                                r["close_date"], r["link"], f"ref={r['ref']}", now, fac))
+    _classify_and_route("kentucky_vss", rows)
+
+
+def run_colorado_vss(facilities):
+    # Same CGI Advantage VSS platform as Michigan (see adapters/advantage_vss.py)
+    # - public, no login, same stealth requirement.
+    all_hits = []
+    with new_page(headless=True, stealth=True) as page:
+        for kw in KEYWORDS:
+            all_hits.extend(colorado_vss.search(page, kw))
+
+    deduped = _dedupe(all_hits)
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = []
+    for r in deduped:
+        fac = _match_facility(r["title"], f"{r['org']}, Colorado", facilities)
+        rows.append(_build_row("Colorado CGI Advantage VSS", r["title"], r["org"], "CO", r["status"],
+                                r["close_date"], r["link"], f"ref={r['ref']}", now, fac))
+    _classify_and_route("colorado_vss", rows)
+
+
 def run_nh_dhhs(facilities):
     # Needs core.browser.new_page(headless=False) - this site sits behind an
     # Akamai WAF that blocks plain headless AND headless+stealth=True
@@ -1013,6 +1050,43 @@ def run_nh_dhhs(facilities):
         rows.append(_build_row("NH DHHS", r["title"], "NH DHHS", "NH", "Open",
                                 "", r["link"], note, now, fac))
     _classify_and_route("nh_dhhs", rows)
+
+
+def run_nhprocure(facilities):
+    # Needs headless=False - same Akamai-style WAF as nh_dhhs.py, same fix.
+    # Fully public despite Mike's docx listing an NHProcure credential for
+    # it - confirmed 2026-10-19.
+    all_hits = []
+    with new_page(headless=False) as page:
+        for kw in KEYWORDS:
+            all_hits.extend(nhprocure.search(page, kw))
+
+    deduped = _dedupe(all_hits)
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = [
+        _build_row("NHProcure", r["title"], r["org"], "NH", r["status"], r["close_date"],
+                   r["link"], f"ref={r['ref']}", now,
+                   _match_facility(r["title"], f"{r['org']}, New Hampshire", facilities))
+        for r in deduped
+    ]
+    _classify_and_route("nhprocure", rows)
+
+
+def run_arkansas_osp(facilities):
+    all_hits = []
+    with new_page(headless=False) as page:
+        for kw in KEYWORDS:
+            all_hits.extend(arkansas_osp.search(page, kw))
+
+    deduped = _dedupe(all_hits, key="link")
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = [
+        _build_row("Arkansas OSP", r["title"], r["org"], "AR", r["status"], r["close_date"],
+                   r["link"], f"posted={r['pub_date']} {r['description'][:150]}", now,
+                   _match_facility(r["title"], f"{r['org']}, Arkansas", facilities))
+        for r in deduped
+    ]
+    _classify_and_route("arkansas_osp", rows)
 
 
 # Ordered by real facility coverage (confirmed by cross-referencing each
@@ -1123,6 +1197,10 @@ PORTALS = {
     "bidnet_florida": run_bidnet_florida,
     "bidnet_north_carolina": run_bidnet_north_carolina,
     "cal_eprocure": run_cal_eprocure,
+    "kentucky_vss": run_kentucky_vss,
+    "colorado_vss": run_colorado_vss,
+    "nhprocure": run_nhprocure,
+    "arkansas_osp": run_arkansas_osp,
     "nh_dhhs": run_nh_dhhs,
     "pa_emarketplace": run_pa_emarketplace,
     "mississippi": run_mississippi,
