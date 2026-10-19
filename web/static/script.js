@@ -4,9 +4,9 @@
   // Columns shown in the main table, in order. Everything else appears in
   // the expanded detail row (click anywhere on a row to toggle it) - same
   // pattern as the chow-scraper dashboard.
-  const TABLE_COLUMNS = ["Portal", "Title", "Facility", "State", "Closing Date", "LLM Bucket", "Shared in Slack"];
+  const TABLE_COLUMNS = ["Portal", "Title", "Facility", "State", "Closing Date", "Scraped At", "LLM Bucket", "Shared in Slack"];
   const DETAIL_SECTIONS = [
-    ["Posting", ["Agency", "Status", "LLM Lifecycle", "LLM Reasoning", "LLM Disqualifier", "Notes", "Scraped At", "Link"]],
+    ["Posting", ["Agency", "Status", "LLM Lifecycle", "LLM Reasoning", "LLM Disqualifier", "Notes", "Link"]],
     ["Tracking", ["Slack Thread Link", "Verdict"]],
   ];
   const WIDE_FIELDS = new Set(["LLM Reasoning", "Notes", "Verdict"]);
