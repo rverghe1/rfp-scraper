@@ -81,7 +81,7 @@ from adapters import (
     mississippi, bidbuy, pa_emarketplace, scbo, utah, bidnet, magic_ms, michigan,
     nh_dhhs, commbuys, oregonbuys, emma_md, nyscr, edison_tn, arbuy, movers_mo,
     instantmarkets_mo, cal_eprocure, kentucky_vss, colorado_vss, nhprocure,
-    arkansas_osp,
+    arkansas_osp, eva_virginia,
 )
 import requests
 
@@ -1089,6 +1089,34 @@ def run_arkansas_osp(facilities):
     _classify_and_route("arkansas_osp", rows)
 
 
+def run_eva_virginia(facilities):
+    # Virginia's eVA - no browser needed, pure HTTP against the public
+    # Solr JSON API the page's own JS calls (see adapters/eva_virginia.py
+    # for why: no keyword search box exists in the UI at all, only facet
+    # filters). Fetches all ~587 currently-Open postings once, then
+    # filters locally per keyword, same single-fetch pattern as
+    # run_movers_mo rather than re-fetching per keyword.
+    session = requests.Session()
+    all_open = eva_virginia.fetch_all_open(session)
+    print(f"[eva_virginia] {len(all_open)} open postings pulled from eVA")
+    all_hits, seen = [], set()
+    for kw in KEYWORDS:
+        for r in eva_virginia.filter_keyword(all_open, kw):
+            if r["ref"] in seen:
+                continue
+            seen.add(r["ref"])
+            all_hits.append(r)
+
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = [
+        _build_row("eVA (Virginia)", r["title"], r["org"], "Virginia", r["status"],
+                   r["close_date"], r["link"], f"ref={r['ref']} {r['description'][:150]}", now,
+                   _match_facility(r["title"], f"{r['org']}, Virginia", facilities))
+        for r in all_hits
+    ]
+    _classify_and_route("eva_virginia", rows)
+
+
 # Ordered by real facility coverage (confirmed by cross-referencing each
 # portal's actual state/county reach against data/facilities.csv - see the
 # 2026-09 coverage audit). Default `python3 run_all.py` (no args) runs them
@@ -1201,6 +1229,7 @@ PORTALS = {
     "colorado_vss": run_colorado_vss,
     "nhprocure": run_nhprocure,
     "arkansas_osp": run_arkansas_osp,
+    "eva_virginia": run_eva_virginia,
     "nh_dhhs": run_nh_dhhs,
     "pa_emarketplace": run_pa_emarketplace,
     "mississippi": run_mississippi,
