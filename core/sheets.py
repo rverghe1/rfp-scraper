@@ -13,9 +13,12 @@ Two tabs, two different jobs:
     relevance is the whole point of this tab), and it doesn't compete with
     the main tab for space.
 """
+import difflib
 import os
+import re
 
 import gspread
+from dateutil import parser as date_parser
 from google.oauth2.service_account import Credentials
 
 # SERVICE_ACCOUNT_KEY_PATH env var lets this run in a container (Railway's
@@ -89,22 +92,47 @@ _STATE_NAME_TO_ABBREV = {
 }
 
 
-def _normalize_cross_portal_key(title, state, closing_date):
-    """Same real-world posting often gets scraped from more than one portal
-    (confirmed: a Passaic County, NJ posting appeared on both BidNet Direct
-    and PassaicBids with an identical title and closing date, but one
-    portal wrote the state as "New Jersey" and the other as "NJ" - only
-    Agency/Link/Portal/State-spelling differed). Normalized (lowercased,
-    whitespace-collapsed) title + state-abbreviation + closing date is
-    distinctive enough to catch that pattern without the false-positive
-    risk of matching on title alone (several portals post genuinely
-    different RFPs under generic titles like "Nurse Staffing" in different
-    states)."""
-    norm_title = " ".join((title or "").lower().split())
+def _normalize_cross_portal_key(portal, title, state, closing_date):
+    """Same real-world posting often gets scraped from more than one portal,
+    but each portal words it differently: state as "New Jersey"/"NJ"/blank
+    (DemandStar has none), closing date as "10/01/2026", "10/01/2026
+    16:00:00", "2026-10-26T00:00:00Z" or "Oct 26, 2026", and occasionally the
+    title itself ("Nurse Anesthesia Services" vs "Nursing Anesthesia
+    Services", "Boulder County Jail EMT Staffing" vs "Jail EMT Staffing").
+    Returns (portal, normalized title, state abbrev or "", date or None) for
+    _is_cross_portal_duplicate to compare fuzzily, since an exact key misses
+    all of those."""
+    norm_title = " ".join(re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).split())
     state_clean = (state or "").strip().lower()
-    norm_state = _STATE_NAME_TO_ABBREV.get(state_clean, state_clean)
-    norm_date = (closing_date or "").strip().lower()
-    return (norm_title, norm_state, norm_date)
+    norm_state = _STATE_NAME_TO_ABBREV.get(state_clean, state_clean).upper()
+    try:
+        norm_date = date_parser.parse((closing_date or "").strip(), fuzzy=True).date() if (closing_date or "").strip() else None
+    except (ValueError, OverflowError):
+        norm_date = None
+    return ((portal or "").strip().lower(), norm_title, norm_state, norm_date)
+
+
+def _is_cross_portal_duplicate(a, b):
+    """a, b: _normalize_cross_portal_key tuples. Requires different portals
+    (two similar titles on the SAME portal are separate postings), states
+    that agree or where one side is blank, closing dates within a day of each
+    other (timezone shifts), and titles that are near-identical or one fully
+    contained in the other (at least 3 words, so generic ones like "Nurse
+    Staffing" don't swallow each other)."""
+    pa, ta, sa, da = a
+    pb, tb, sb, db = b
+    if pa == pb or not ta or not tb:
+        return False
+    if sa and sb and sa != sb:
+        return False
+    if da is None or db is None or abs((da - db).days) > 1:
+        return False
+    if ta == tb:
+        return True
+    short, long_ = sorted((ta, tb), key=len)
+    if len(short.split()) >= 3 and short in long_:
+        return True
+    return difflib.SequenceMatcher(None, ta, tb).ratio() >= 0.88
 
 
 def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER, cross_portal_dedupe=False):
@@ -156,7 +184,7 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER, cross_portal
 
     # key -> 1-indexed sheet row number, for targeting an update.
     key_to_row_num = {}
-    cross_portal_keys = set()
+    cross_portal_keys = []
     if pi is not None:
         for i, row in enumerate(existing[1:], start=2):
             key = (row[pi] if pi < len(row) else "",
@@ -164,7 +192,8 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER, cross_portal
                    row[ai] if ai < len(row) else "")
             key_to_row_num[key] = i
             if cross_portal_dedupe and si is not None and ci is not None:
-                cross_portal_keys.add(_normalize_cross_portal_key(
+                cross_portal_keys.append(_normalize_cross_portal_key(
+                    row[pi] if pi < len(row) else "",
                     row[ti] if ti < len(row) else "",
                     row[si] if si < len(row) else "",
                     row[ci] if ci < len(row) else "",
@@ -176,7 +205,7 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER, cross_portal
     new_row_values = []
     batch_updates = []  # [{"range": "A5:O5", "values": [[...]]}]
     seen_this_batch = set()
-    cross_portal_seen_this_batch = set()
+    cross_portal_seen_this_batch = []
     updated_count = 0
     skipped_duplicates = []
     for r in rows:
@@ -186,15 +215,15 @@ def append_rows(rows, sheet_name=RESULTS_SHEET_NAME, header=HEADER, cross_portal
         seen_this_batch.add(key)
 
         if cross_portal_dedupe:
-            xkey = _normalize_cross_portal_key(r.get("Title", ""), r.get("State", ""), r.get("Closing Date", ""))
+            xkey = _normalize_cross_portal_key(r.get("Portal", ""), r.get("Title", ""), r.get("State", ""), r.get("Closing Date", ""))
             # Only treat it as a cross-portal duplicate if it's NOT the exact
             # same (Portal, Title, Agency) row we're about to update in
             # place below - that's a legitimate refresh, not a duplicate.
             is_known_row = key in key_to_row_num
-            if not is_known_row and (xkey in cross_portal_keys or xkey in cross_portal_seen_this_batch):
+            if not is_known_row and any(_is_cross_portal_duplicate(xkey, k) for k in (*cross_portal_keys, *cross_portal_seen_this_batch)):
                 skipped_duplicates.append((r.get("Portal", ""), r.get("Title", "")))
                 continue
-            cross_portal_seen_this_batch.add(xkey)
+            cross_portal_seen_this_batch.append(xkey)
 
         row_values = [r.get(h, "") for h in header]
         existing_row_num = key_to_row_num.get(key)
