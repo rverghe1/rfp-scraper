@@ -81,7 +81,7 @@ from adapters import (
     mississippi, bidbuy, pa_emarketplace, scbo, utah, bidnet, magic_ms, michigan,
     nh_dhhs, commbuys, oregonbuys, emma_md, nyscr, edison_tn, arbuy, movers_mo,
     instantmarkets_mo, cal_eprocure, kentucky_vss, colorado_vss, nhprocure,
-    arkansas_osp, eva_virginia,
+    arkansas_osp, eva_virginia, webs_wa,
 )
 import requests
 
@@ -1117,6 +1117,31 @@ def run_eva_virginia(facilities):
     _classify_and_route("eva_virginia", rows)
 
 
+def run_webs_wa(facilities):
+    # Washington's WEBS - public bid calendar, no login (see
+    # adapters/webs_wa.py). No keyword search, so fetch every open posting
+    # once (org by org, which also supplies the org name) and filter locally.
+    with new_page(headless=True) as page:
+        all_open = webs_wa.fetch_all_open(page)
+    print(f"[webs_wa] {len(all_open)} open postings pulled from WEBS")
+    all_hits, seen = [], set()
+    for kw in KEYWORDS:
+        for r in webs_wa.filter_keyword(all_open, kw):
+            if r["ref"] in seen:
+                continue
+            seen.add(r["ref"])
+            all_hits.append(r)
+
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    rows = [
+        _build_row("WEBS (WA)", r["title"], r["org"], "WA", r["status"],
+                   r["close_date"], r["link"], f"ref={r['ref']} {r['description'][:150]}", now,
+                   _match_facility(r["title"], f"{r['org']}, Washington", facilities))
+        for r in all_hits
+    ]
+    _classify_and_route("webs_wa", rows)
+
+
 # Ordered by real facility coverage (confirmed by cross-referencing each
 # portal's actual state/county reach against data/facilities.csv - see the
 # 2026-09 coverage audit). Default `python3 run_all.py` (no args) runs them
@@ -1230,6 +1255,7 @@ PORTALS = {
     "nhprocure": run_nhprocure,
     "arkansas_osp": run_arkansas_osp,
     "eva_virginia": run_eva_virginia,
+    "webs_wa": run_webs_wa,
     "nh_dhhs": run_nh_dhhs,
     "pa_emarketplace": run_pa_emarketplace,
     "mississippi": run_mississippi,
