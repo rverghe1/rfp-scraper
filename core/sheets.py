@@ -118,19 +118,31 @@ def _is_cross_portal_duplicate(a, b):
     that agree or where one side is blank, closing dates within a day of each
     other (timezone shifts), and titles that are near-identical or one fully
     contained in the other (at least 3 words, so generic ones like "Nurse
-    Staffing" don't swallow each other)."""
+    Staffing" don't swallow each other). Two relaxations for portals that
+    leave fields out or shorten titles: a row with no closing date (Mississippi
+    DFA posts none) still matches when BOTH states are present and equal, and
+    a 2-word title contained in the other counts when the closing dates are
+    exactly equal and both states are present and equal."""
     pa, ta, sa, da = a
     pb, tb, sb, db = b
     if pa == pb or not ta or not tb:
         return False
     if sa and sb and sa != sb:
         return False
-    if da is None or db is None or abs((da - db).days) > 1:
-        return False
+    both_states = bool(sa and sb)
+    if da is None or db is None:
+        if not both_states:
+            return False  # nothing but the title left to go on
+        same_day = False
+    else:
+        if abs((da - db).days) > 1:
+            return False
+        same_day = da == db
     if ta == tb:
         return True
     short, long_ = sorted((ta, tb), key=len)
-    if len(short.split()) >= 3 and short in long_:
+    words = len(short.split())
+    if short in long_ and (words >= 3 or (words == 2 and same_day and both_states)):
         return True
     return difflib.SequenceMatcher(None, ta, tb).ratio() >= 0.88
 
